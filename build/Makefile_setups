@@ -190,7 +190,7 @@ ifeq ($(SETUP), mydisc_inj)
 #   locally isothermal gas disc
     DISC_VISCOSITY=yes
     SETUPFILE= setup_disc_overtonbex.f90
-    SRCINJECT=utils_binary.f90 inject_rgm.f90
+    SRCINJECT=utils_binary.f90 inject_randomwind.f90
     ANALYSIS= martin_analysis_binarydisc.f90
     ISOTHERMAL=yes
     KNOWN_SETUP=yes
