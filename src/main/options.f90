@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------!
 ! The Phantom Smoothed Particle Hydrodynamics code, by Daniel Price et al. !
-! Copyright (c) 2007-2024 The Authors (see AUTHORS)                        !
+! Copyright (c) 2007-2025 The Authors (see AUTHORS)                        !
 ! See LICENCE file for usage and distribution conditions                   !
 ! http://phantomsph.github.io/                                             !
 !--------------------------------------------------------------------------!
@@ -54,6 +54,9 @@ module options
  integer, public :: ISM
  real(kind=sp), public :: mcfost_keep_part
  character(len=80), public :: Voronoi_limits_file
+
+ ! pressure on sinks
+ logical, public :: need_pressure_on_sinks
 
  ! radiation
  logical, public :: exchange_radiation_energy, limit_radiation_flux, implicit_radiation
@@ -168,6 +171,8 @@ subroutine set_default_options
 
  ! variable composition
  use_var_comp = .false.
+
+ need_pressure_on_sinks = .false.
 
 end subroutine set_default_options
 

@@ -1,12 +1,14 @@
 !--------------------------------------------------------------------------!
 ! The Phantom Smoothed Particle Hydrodynamics code, by Daniel Price et al. !
-! Copyright (c) 2007-2024 The Authors (see AUTHORS)                        !
+! Copyright (c) 2007-2025 The Authors (see AUTHORS)                        !
 ! See LICENCE file for usage and distribution conditions                   !
 ! http://phantomsph.github.io/                                             !
 !--------------------------------------------------------------------------!
 module setup
 !
-! this module does setup
+! Bondi-Hoyle Lyttleton setup. This is just a blank domain
+! containing a single sink particle into which particles
+! will be injected
 !
 ! :References: None
 !
@@ -46,7 +48,6 @@ subroutine setpart(id,npart,npartoftype,xyzh,massoftype,vxyzu,polyk,gamma,hfact,
  integer         :: ierr
 
  call set_units(dist=1.,time=1.,G=1.)
-
 !
 !--general parameters
 !
@@ -57,7 +58,6 @@ subroutine setpart(id,npart,npartoftype,xyzh,massoftype,vxyzu,polyk,gamma,hfact,
  call init_inject(ierr)
  m     = BHL_m_star / umass ! Depends on parameters in the input file
  hacc  = BHL_r_star / udist ! Depends on parameters in the input file
-
 !
 !--space available for injected gas particles
 !

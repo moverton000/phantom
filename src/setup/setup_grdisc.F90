@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------!
 ! The Phantom Smoothed Particle Hydrodynamics code, by Daniel Price et al. !
-! Copyright (c) 2007-2024 The Authors (see AUTHORS)                        !
+! Copyright (c) 2007-2025 The Authors (see AUTHORS)                        !
 ! See LICENCE file for usage and distribution conditions                   !
 ! http://phantomsph.github.io/                                             !
 !--------------------------------------------------------------------------!
@@ -29,11 +29,11 @@ module setup
 !   - spin    : *spin parameter of black hole |a|<1*
 !   - theta   : *inclination of disc (degrees)*
 !
-! :Dependencies: eos, extern_lensethirring, externalforces, infile_utils,
-!   io, kernel, metric, mpidomain, options, part, physcon, prompting,
-!   setdisc, setorbit, setstar, setunits, setup_params, timestep, units
+! :Dependencies: eos, externalforces, infile_utils, io, kernel, mpidomain,
+!   options, part, physcon, prompting, setdisc, setorbit, setstar,
+!   setunits, setup_params, timestep, units
 !
- use options,  only:alpha
+ use options,  only:alpha,ieos
  use setstar,  only:star_t
  use setorbit, only:orbit_t
  implicit none
@@ -41,7 +41,7 @@ module setup
 
  real,    private :: mhole,mdisc,r_in,r_out,r_ref,spin,honr,theta,p_index,q_index,accrad,gamma_ad
  integer, private :: np,nstars
- logical, private :: ismooth,relax
+ logical, private :: ismooth,relax,write_rho_to_file
  integer, parameter :: max_stars = 10
  type(star_t), private :: star(max_stars)
  type(orbit_t),private :: orbit(max_stars)
@@ -57,27 +57,23 @@ contains
 !----------------------------------------------------------------
 subroutine setpart(id,npart,npartoftype,xyzh,massoftype,vxyzu,polyk,gamma,hfact,time,fileprefix)
  use setdisc,        only:set_disc
- use part,           only:igas,nsinkproperties,eos_vars,rad,xyzmh_ptmass,vxyz_ptmass,nptmass
+ use part,           only:igas,nsinkproperties,eos_vars,rad,xyzmh_ptmass,vxyz_ptmass,nptmass,gr
  use io,             only:master
  use externalforces, only:accradius1,accradius1_hard
  use options,        only:iexternalforce,alphau,iexternalforce,ipdv_heating,ishock_heating
- use units,          only:set_units,umass
+ use units,          only:set_units,umass,in_code_units
  use physcon,        only:solarm,pi
-#ifdef GR
- use metric,         only:a
-#else
- use externalforces,       only:iext_einsteinprec
- use extern_lensethirring, only:blackhole_spin
-#endif
+ use externalforces, only:iext_einsteinprec,a
  use prompting,      only:prompt
  use timestep,       only:tmax,dtmax
- use eos,            only:ieos,use_var_comp,X_in,Z_in
+ use eos,            only:use_var_comp,X_in,Z_in
  use kernel,         only:hfact_default
- use setstar,        only:shift_star,set_stars
+ use setstar,        only:shift_star,set_stars,set_defaults_stars
  use setorbit,       only:set_defaults_orbit,set_orbit
  use setunits,       only:mass_unit
  use mpidomain,      only:i_belong
  use setup_params,   only:rhozero
+ use infile_utils,   only:get_options
  integer,           intent(in)    :: id
  integer,           intent(out)   :: npart
  integer,           intent(out)   :: npartoftype(:)
@@ -87,23 +83,17 @@ subroutine setpart(id,npart,npartoftype,xyzh,massoftype,vxyzu,polyk,gamma,hfact,
  real,              intent(out)   :: massoftype(:)
  real,              intent(inout) :: time
  character(len=20), intent(in)    :: fileprefix
- character(len=120) :: filename
  integer :: ierr,nptmass_in,i
  integer(kind=8) :: npart_total
- logical :: iexist,write_profile
- real    :: cs2
+ logical :: write_profile
+ real    :: cs2,mstar,rstar
  real :: xyzmh_ptmass_in(nsinkproperties,2),vxyz_ptmass_in(3,2)
 
  time            = 0.
  alphau          = 0.0
  npartoftype(:)  = 0
  nptmass         = 0
- iexternalforce  = 1
  hfact           = hfact_default
-
-#ifndef GR
- iexternalforce = iext_einsteinprec
-#endif
 
  tmax  = 2.e4
  dtmax = 100.
@@ -135,6 +125,7 @@ subroutine setpart(id,npart,npartoftype,xyzh,massoftype,vxyzu,polyk,gamma,hfact,
 
  ! stars
  nstars = 0
+ call set_defaults_stars(star)
  do i=1,size(orbit)
     call set_defaults_orbit(orbit(i))
  enddo
@@ -144,18 +135,11 @@ subroutine setpart(id,npart,npartoftype,xyzh,massoftype,vxyzu,polyk,gamma,hfact,
 !-- Read runtime parameters from setup file
 !
  if (id==master) print "(/,65('-'),(/,1x,a),/,65('-'),/)",'General relativistic disc setup'
- filename = trim(fileprefix)//'.setup'
- inquire(file=filename,exist=iexist)
- if (iexist) call read_setupfile(filename,ierr)
- if (.not. iexist .or. ierr /= 0) then
-    if (id==master) then
-       call write_setupfile(filename)
-       print*,' Edit '//trim(filename)//' and rerun phantomsetup'
-    endif
-    stop
- endif
+ call get_options(trim(fileprefix)//'.setup',id==master,ierr,&
+                  read_setupfile,write_setupfile)
+ if (ierr /= 0) stop 'rerun phantomsetup after editing .setup file'
+
  accradius1 = accrad
- npart = np
 
  !-- Set gamma from the option read from .setup file
  gamma = gamma_ad
@@ -167,14 +151,48 @@ subroutine setpart(id,npart,npartoftype,xyzh,massoftype,vxyzu,polyk,gamma,hfact,
  call set_units(G=1.,c=1.,mass=mhole) ! Set central mass to M=1 in code units
  mdisc           = mdisc*solarm/umass
  accradius1_hard = accradius1
+ massoftype(igas) = mdisc/np  ! set particle mass from the disc mass
 
+ !
+ ! add stars on desired orbits around the black hole, these could be
+ ! either sink particles or balls of gas
+ !
+ if (nstars > 0) then
+    write_profile = .false.
+    iexternalforce = 0
+    call set_stars(id,master,nstars,star,xyzh,vxyzu,eos_vars,rad,npart,npartoftype,&
+                  massoftype,hfact,xyzmh_ptmass,vxyz_ptmass,nptmass,ieos,gamma,&
+                  X_in,Z_in,relax,use_var_comp,write_profile,&
+                  rhozero,npart_total,i_belong,ierr)
+    do i=1,nstars
+       nptmass_in = 0
+       ! convert stellar mass and radius to code units
+       mstar = in_code_units(star(i)%m,ierr)
+       rstar = in_code_units(star(i)%r,ierr)
+       call set_orbit(orbit(i),mhole/umass,mstar,r_in,rstar, &
+                     xyzmh_ptmass_in,vxyz_ptmass_in,nptmass_in,(id==master),ierr)
+
+       ! shift the star to the position of the second body
+       if (star(i)%iprofile > 0) then
+          call shift_star(npart,npartoftype,xyzh,vxyzu,&
+                         x0=xyzmh_ptmass_in(:,2),v0=vxyz_ptmass_in(:,2),itype=i)
+       else
+          nptmass = nptmass + 1
+          xyzmh_ptmass(:,nptmass) = xyzmh_ptmass_in(:,2)
+          vxyz_ptmass(:,nptmass) = vxyz_ptmass_in(:,2)
+       endif
+    enddo
+ endif
+
+ if (.not.gr) iexternalforce = iext_einsteinprec
 !
 ! Convert to radians
 !
  theta = theta/180. * pi
 
  call set_disc(id,master,&
-               npart         = npart,                &
+               npart         = np,                   &
+               npart_start   = npart+1,              &
                rmin          = r_in,                 &
                rmax          = r_out,                &
                rref          = r_ref,                &
@@ -194,47 +212,19 @@ subroutine setpart(id,npart,npartoftype,xyzh,massoftype,vxyzu,polyk,gamma,hfact,
                bh_spin       = spin,                 &
                prefix        = fileprefix)
 
-#ifdef GR
- a     = spin
- ! Overwrite thermal energies to be correct for GR
- ! And use polyk to store the constant thermal energy
- ! polyk = cs2/(gamma-1.-cs2)
- ! vxyzu(4,:) = polyk
-
- polyk = 0. !?
-
-#else
- blackhole_spin = spin
- polyk = cs2
-#endif
+ npart = npart + np
+ a = spin
+ if (gr) then
+    ! Overwrite thermal energies to be correct for GR
+    ! And use polyk to store the constant thermal energy
+    ! polyk = cs2/(gamma-1.-cs2)
+    ! vxyzu(4,:) = polyk
+    polyk = 0. !?
+ else
+    polyk = cs2
+ endif
 
  npartoftype(1) = npart
-
- !
- ! add stars on desired orbits around the black hole, these could be
- ! either sink particles or balls of gas
- !
- if (nstars > 0) then
-    write_profile = .false.
-    call set_stars(id,master,nstars,star,xyzh,vxyzu,eos_vars,rad,npart,npartoftype,&
-                   massoftype,hfact,xyzmh_ptmass,vxyz_ptmass,nptmass,ieos,polyk,gamma,&
-                   X_in,Z_in,relax,use_var_comp,write_profile,&
-                   rhozero,npart_total,i_belong,ierr)
-    do i=1,nstars
-       nptmass_in = 0
-       call set_orbit(orbit(i),mhole/umass,star(i)%mstar,r_in,star(i)%rstar, &
-                      xyzmh_ptmass_in,vxyz_ptmass_in,nptmass_in,(id==master),ierr)
-
-       ! shift the star to the position of the second body
-       if (star(i)%iprofile > 0) then
-          call shift_star(npart,xyzh,vxyzu,x0=xyzmh_ptmass_in(:,2),v0=vxyz_ptmass_in(:,2),itype=i)
-       else
-          nptmass = nptmass + 1
-          xyzmh_ptmass(:,nptmass) = xyzmh_ptmass_in(:,2)
-          vxyz_ptmass(:,nptmass) = vxyz_ptmass_in(:,2)
-       endif
-    enddo
- endif
 
  ipdv_heating = 0
  ishock_heating = 0
@@ -277,7 +267,7 @@ subroutine write_setupfile(filename)
  call write_inopt(np     ,'np'     ,'number of particles in disc'               , iunit)
 
  write(iunit,"(/,a)") '# stars'
- call write_options_stars(star,relax,iunit,nstar=nstars)
+ call write_options_stars(star,relax,write_rho_to_file,ieos,iunit,nstar=nstars)
  do i=1,nstars
     call write_options_orbit(orbit(i),iunit,label=achar(i+48))
  enddo
@@ -290,12 +280,11 @@ subroutine read_setupfile(filename,ierr)
  use io,           only:error
  use setstar,      only:read_options_stars
  use setorbit,     only:read_options_orbit
- use eos,          only:ieos,polyk
  use setunits,     only:read_options_and_set_units
- character(len=*), intent(in)  :: filename
- integer,          intent(out) :: ierr
+ character(len=*), intent(in)    :: filename
+ integer,          intent(out)   :: ierr
  integer, parameter :: iunit = 21
- integer :: nerr,need_iso,i
+ integer :: nerr,i
  type(inopts), allocatable :: db(:)
 
  print "(a)",'reading setup options from '//trim(filename)
@@ -318,7 +307,7 @@ subroutine read_setupfile(filename,ierr)
  call read_inopt(gamma_ad,'gamma' ,db,min=1.,errcount=nerr)
  call read_inopt(accrad ,'accrad' ,db,min=0.,errcount=nerr)
  call read_inopt(np     ,'np   '  ,db,min=0 ,errcount=nerr)
- call read_options_stars(star,need_iso,ieos,polyk,relax,db,nerr,nstars)
+ call read_options_stars(star,ieos,relax,write_rho_to_file,db,nerr,nstars)
  do i=1,nstars
     call read_options_orbit(orbit(i),db,nerr,label=achar(i+48))
  enddo

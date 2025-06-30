@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------!
 ! The Phantom Smoothed Particle Hydrodynamics code, by Daniel Price et al. !
-! Copyright (c) 2007-2024 The Authors (see AUTHORS)                        !
+! Copyright (c) 2007-2025 The Authors (see AUTHORS)                        !
 ! See LICENCE file for usage and distribution conditions                   !
 ! http://phantomsph.github.io/                                             !
 !--------------------------------------------------------------------------!
@@ -33,6 +33,8 @@ module moddump
 !   setup_params, spherical, stretchmap, timestep, units
 !
  implicit none
+ character(len=*), parameter, public :: moddump_flags = ''
+
  public :: modify_dump
  private :: rho,rho_tab,get_temp_r,uerg,calc_rhobreak,calc_rho0,write_setupfile,read_setupfile
 
@@ -523,6 +525,6 @@ subroutine read_setupfile(filename,ierr)
  endif
 
 end subroutine read_setupfile
-!----------------------------------------------------------------
+
 end module moddump
 
