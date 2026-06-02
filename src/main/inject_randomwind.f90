@@ -216,6 +216,7 @@ subroutine inject_particles(time,dtlast,xyzh,vxyzu,xyzmh_ptmass,vxyz_ptmass,&
        call rotatevec(dx, rotaxis, theta_rad)
        call cross_product3D(veczprime, dx, vhat)
        vxyz      = v2 + wind_speed*vhat
+       xyz       = r2 + rinject*dx
     case default
        ! Get random position on sphere
        dx = get_pos_on_sphere(seed, delta_theta)
