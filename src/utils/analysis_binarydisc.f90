@@ -215,9 +215,9 @@ subroutine do_analysis(dumpfile,numfile,xyzh,vxyzu,pmass,npart,time,iunit)
     rmax = 1.01*rmax
 
     if (j == ipri) then
-       r1=0.1*a
-       r2=0.2*a
-       r3=0.3*a
+       r1=3.0
+       r2=5.0
+       r3=10.0
 
        i1=huge(i1)
        i2=huge(i2)
@@ -430,9 +430,9 @@ subroutine do_analysis(dumpfile,numfile,xyzh,vxyzu,pmass,npart,time,iunit)
     if (check /= 0) call fatal(analysistype,'unable to open time.dat file at t=0.0')
     write(itime,"('#',7(1x,'[',i2.2,1x,a11,']',2x))") &
          1,'time', &
-         2,'e_1', &
-         3,'e_2', &
-         4,'e_3', &
+         2,'e_1[r1=3]', &
+         3,'e_2[r2=5]', &
+         4,'e_3[r3=10]', &
          5,'i_1', &
          6,'i_2', &
          7,'i_3'

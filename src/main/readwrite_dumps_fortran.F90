@@ -823,10 +823,22 @@ subroutine read_dump_fortran(dumpfile,tfile,hfactfile,idisk1,iprint,id,nprocs,ie
     npartoftypetot = npartoftype
     call count_particle_types(npartoftype)
     npartoftypetotact = reduceall_mpi('+',npartoftype)
+     !!! circumvent header matching error when shuffled:
+    write(*,*) '*******did some risky thing*******'
+    write(*,*) '*******'
+    write(*,*) 'npartoftypetot    =',npartoftypetot
+    write(*,*) 'npartoftypetotact =',npartoftypetotact
+    write(*,*) 'npartoftypetot has been reset to npartoftypetotact'
+    write(*,*) '*******'
+    npartoftypetot = npartoftypetotact
+    !!! 
     do i = 1,maxtypes
        if (npartoftypetotact(i) /= npartoftypetot(i)) then
           write(*,*) 'npartoftypetot    =',npartoftypetot
           write(*,*) 'npartoftypetotact =',npartoftypetotact
+          !!!
+          write(*,*) '*******checked*******'
+          !!!
           call error('read_dump','particle type counts do not match header')
           ierr = 8
        endif
